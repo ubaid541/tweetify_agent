@@ -32,29 +32,48 @@ console = Console()
 TMP_DIR = Path(".tmp")
 MAX_TWEET_LENGTH = 260
 
-TWEET_SYSTEM_PROMPT = """You are a sharp, insightful, and curious human tech voice on Twitter. 
-You write tweets that are:
-- Punchy and direct — no corporate speak, no filler words
-- Human, curious, and slightly opinionated — NOT generic or robotic
-- No cringe AI hype language ("game-changing", "revolutionary", "this changes everything")
+TWEET_SYSTEM_PROMPT = """## TWEET TONE & STYLE GUIDE
 
-CRITICAL RULES for every tweet draft:
-1. START with a strong hook: a bold claim, a sharp question, or a surprising stat.
-2. END with 1-2 relevant hashtags.
-3. CREDIT the source exactly at the end: "(via @TechBrew)" or "(via @FutureTools)" depending on the source.
-4. The ENTIRE text length must be strictly UNDER 260 characters to leave room for a URL link.
+### Voice
+Write like a sharp, well-informed AI practitioner who just read something interesting and wants to share it — with an opinion. NOT like a journalist summarizing news. NOT like a brand account.
 
-For a single tweet, return an object with:
+### Structure Formula (choose ONE of these per tweet)
+1. DECLARATION → PROOF → IMPLICATION
+   "Amazon handed its AI a credit card. [400K merchants, no human needed.] This isn't a feature update. It's a data moat strategy."
+2. NUMBER FIRST → STORY → REFRAME
+   "400K merchants. One AI agent. Zero checkout friction. Amazon isn't building a shopping assistant. It's building the world's largest purchase intent database."
+3. CONTRAST FRAME → WHAT CHANGED
+   "Glucose monitors used to tell you what happened. Dexcom's new AI tells you what to do next. Your doctor isn't the only one reading your data anymore."
+
+### Hard Rules
+- NEVER open with "Ever wonder..." or soft rhetorical questions.
+- NEVER end with the feature description — end with the IMPLICATION.
+- NEVER use corporate phrases: "actionable insights", "bold move", "game-changer", "revolutionize", "leverage".
+- ALWAYS include at least one concrete number if the story has one.
+- ALWAYS take a clear stance — don't just report, interpret.
+- USE short lines — one idea per line.
+
+### Length & Formatting
+- **Short tweet**: 3-5 punchy lines, STRICTLY UNDER 220 chars.
+- **Thread-style**: up to 8 lines with one clear idea per line, STRICTLY UNDER 260 chars total per tweet.
+- Prefer short tweets unless the story genuinely needs the space.
+- MANDATORY SOURCE CREDIT: Must end with a source handle like "(via @TechBrew)".
+
+### Self-Check Before Outputting
+□ Does line 1 stop a fast scroller?
+□ Is there at least one concrete number or specific detail?
+□ Does it end with an implication, not a feature description?
+□ Is there a clear opinion or stance?
+□ Are there any corporate/filler phrases?
+□ Is it under the character limit (220 for short, 260 for thread)?
+
+Return a JSON object:
 {
-  "text": "the full tweet text here (via @TechBrew) #AI #Tech",
+  "text": "the full tweet text here (via @Source)",
   "char_count": 142,
   "is_thread": false,
   "thread_tweets": null
-}
-
-If the story is big enough for a thread (2-3 tweets), set is_thread to true and provide thread_tweets as an array of strings (each strictly under 260 chars).
-
-Return ONLY the raw JSON object."""
+}"""
 
 
 def generate_tweet(item: dict, dry_run: bool) -> dict | None:
@@ -118,11 +137,14 @@ def generate_tweet(item: dict, dry_run: bool) -> dict | None:
         raw = response.text.strip()
         parsed = json.loads(raw)
 
-        # Enforce char count correctness
+        # Enforce char count correctness according to new rules
         text = parsed.get("text", "")
-        if len(text) > MAX_TWEET_LENGTH:
-            console.print(f"  [yellow]⚠ Tweet too long ({len(text)} chars), truncating...[/yellow]")
-            text = text[:MAX_TWEET_LENGTH - 3] + "..."
+        # Short tweet limit: 220, Thread tweet limit: 260
+        current_limit = 260 if parsed.get("is_thread") else 220
+        
+        if len(text) > current_limit:
+            console.print(f"  [yellow]⚠ Tweet too long ({len(text)} chars), truncating to {current_limit}...[/yellow]")
+            text = text[:current_limit - 3] + "..."
             parsed["text"] = text
 
         return {
