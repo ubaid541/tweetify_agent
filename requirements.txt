@@ -1,0 +1,26 @@
+# Twitter / X API
+tweepy>=4.14.0
+
+# Gmail API
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+
+# Web scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+playwright>=1.40.0
+
+# HTML → Markdown conversion (for newsletter parsing)
+html2text>=2020.1.16
+
+# AI / LLM
+google-genai>=0.3.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Utilities
+rich>=13.0.0       # pretty terminal output
+pydantic>=2.0.0    # data validation
+pytz>=2023.3       # timezone handling
