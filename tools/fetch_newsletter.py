@@ -67,7 +67,7 @@ def decode_body(data: str) -> str:
     return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
 
 
-def extract_html_or_text(payload: dict) -> str:
+def extract_html_or_text(payload: dict) -> tuple[str, str]:
     """Recursively extract best available body from email payload."""
     mime = payload.get("mimeType", "")
     body_data = payload.get("body", {}).get("data", "")
@@ -78,10 +78,16 @@ def extract_html_or_text(payload: dict) -> str:
         return decode_body(body_data), "plain"
 
     # Multipart: prefer HTML part
+    plain_result: tuple[str, str] | None = None
     for part in payload.get("parts", []):
         result = extract_html_or_text(part)
-        if result[0]:
+        if result[1] == "html" and result[0]:
             return result
+        elif result[1] == "plain" and result[0] and not plain_result:
+            plain_result = result
+            
+    if plain_result is not None:
+        return plain_result
 
     return "", "plain"
 
