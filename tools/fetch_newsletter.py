@@ -185,36 +185,49 @@ def fetch_newsletters(senders: list[str], dry_run: bool) -> list[dict]:
 
     # Build query: emails from ANY sender
     sender_query = " OR ".join(f"from:{s}" for s in senders)
-    query = f"({sender_query})"
+    # Filter for today's emails (since:YYYY/MM/DD)
+    today_str = datetime.now().strftime("%Y/%m/%d")
+    query = f"({sender_query}) after:{today_str}"
 
-    console.print(f"[dim]Gmail query:[/dim] {query} (max 5 to find latest unseen)")
+    console.print(f"[dim]Gmail query:[/dim] {query} (fetching latest candidates)")
 
-    # Fetch max 5 to find at least 1 that hasn't been processed yet
-    results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
+    # Fetch more results to find the most recent ones for all configured senders
+    results = service.users().messages().list(userId="me", q=query, maxResults=15).execute()
     messages = results.get("messages", [])
 
     if not messages:
         console.print("[yellow]No emails found from any configured senders.[/yellow]")
         return []
 
-    # Process ONLY the single most recent unseen message
+    # Strategy: Find ONE latest unseen message FOR EACH sender
+    sender_seen = set()
+
     for msg_meta in messages:
         msg_id = msg_meta["id"]
         
         if msg_id in processed_ids:
-            console.print(f"[dim]Skipping already-processed message {msg_id}[/dim]")
             continue
 
-        # Found the latest unseen! Process this one and break.
         msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
         headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
 
         subject = headers.get("Subject", "No Subject")
         source = headers.get("From", "Unknown")
-        date_header = headers.get("Date", datetime.now().strftime("%Y-%m-%d"))
-
-        # Determine which newsletter source this is
-        mapped_source = next((s for s in senders if s in source), source)
+        
+        # Match sender case-insensitively
+        matched_sender = None
+        source_lower = source.lower()
+        for s in senders:
+            if s.lower() in source_lower:
+                matched_sender = s
+                break
+        
+        if not matched_sender:
+            continue
+            
+        # If we already got the latest for this sender in this run, skip
+        if matched_sender in sender_seen:
+            continue
 
         raw_content, mime_type = extract_html_or_text(msg["payload"])
         if mime_type == "html":
@@ -224,16 +237,18 @@ def fetch_newsletters(senders: list[str], dry_run: bool) -> list[dict]:
 
         newsletters.append({
             "id": msg_id,
-            "source": mapped_source,
+            "source": matched_sender,
             "subject": subject,
             "date": datetime.now().strftime("%Y-%m-%d"),
             "content": content,
         })
         new_ids.add(msg_id)
-        console.print(f"[green]✓[/green] Fetched: [bold]{subject}[/bold] from {mapped_source}")
+        sender_seen.add(matched_sender)
+        console.print(f"[green]✓[/green] Fetched: [bold]{subject}[/bold] from {matched_sender}")
         
-        # Stop after processing exactly ONE email
-        break
+        # If we've found one for every configured sender, we can stop
+        if len(sender_seen) == len(senders):
+            break
 
     if not newsletters:
         console.print("[yellow]All recent emails have already been processed.[/yellow]")
