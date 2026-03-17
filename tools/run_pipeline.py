@@ -23,6 +23,11 @@ from pathlib import Path
 # Setup logging
 LOG_FILE = Path(".tmp/pipeline.log")
 STATE_FILE = Path(".tmp/state.json")
+
+# Ensure we run from the project root regardless of where we are called from
+PROJECT_ROOT = Path(__file__).parent.parent.absolute()
+os.chdir(PROJECT_ROOT)
+
 Path(".tmp").mkdir(exist_ok=True)
 
 logging.basicConfig(

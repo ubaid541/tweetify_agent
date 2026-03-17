@@ -185,9 +185,9 @@ def fetch_newsletters(senders: list[str], dry_run: bool) -> list[dict]:
 
     # Build query: emails from ANY sender
     sender_query = " OR ".join(f"from:{s}" for s in senders)
-    # Filter for today's emails (since:YYYY/MM/DD)
-    today_str = datetime.now().strftime("%Y/%m/%d")
-    query = f"({sender_query}) after:{today_str}"
+    # Filter for emails from the last 3 days to ensure we don't miss any
+    since_date = (datetime.now() - timedelta(days=3)).strftime("%Y/%m/%d")
+    query = f"({sender_query}) after:{since_date}"
 
     console.print(f"[dim]Gmail query:[/dim] {query} (fetching latest candidates)")
 
