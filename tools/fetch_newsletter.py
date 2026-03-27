@@ -49,8 +49,13 @@ DEFAULT_SENDERS = [
 
 def load_processed_ids() -> set:
     if PROCESSED_IDS_FILE.exists():
-        with open(PROCESSED_IDS_FILE) as f:
-            return set(json.load(f))
+        try:
+            content = PROCESSED_IDS_FILE.read_text().strip()
+            if not content:
+                return set()
+            return set(json.loads(content))
+        except (json.JSONDecodeError, ValueError):
+            return set()
     return set()
 
 

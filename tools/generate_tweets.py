@@ -52,30 +52,40 @@ Write like a sharp, well-informed AI practitioner who just read something intere
 - ALWAYS include at least one concrete number if the story has one.
 - ALWAYS take a clear stance — don't just report, interpret.
 - USE short lines — one idea per line.
+- NEVER truncate a thought to meet the character limit. If the tweet is too long, cut a middle line — never the closing line.
+- NEVER end with "..." or a dangling phrase. Every tweet must end with a complete sentence.
+- COMPLETION OVERRIDES LIMIT: If finishing the final sentence requires going 10–15 chars over the limit, GO OVER. An incomplete tweet is always worse than a slightly long one. The character limit is a target, not a hard wall.
+- NO SOURCE CREDIT: Do not mention the newsletter, tool, or source anywhere in the tweet. No "(via @Handle)". No attribution of any kind.
 
 ### Length & Formatting
-- **Short tweet**: 3-5 punchy lines, STRICTLY UNDER 220 chars.
-- **Thread-style**: up to 8 lines with one clear idea per line, STRICTLY UNDER 260 chars total per tweet.
+- **Short tweet**: minimum 3 lines, maximum 5 lines.
+  Target range: 180–259 chars. If the final sentence needs up to 274 chars to be complete, that is acceptable. Never sacrifice the last line.
+- **Thread-style**: 6–8 lines, one idea per line.
+  Target range: 220–274 chars. Same rule — going to 289 chars is acceptable if it means the closing implication is complete.
 - Prefer short tweets unless the story genuinely needs the space.
-- MANDATORY SOURCE CREDIT: Must end with a source handle like "(via @TechBrew)".
+- The character limit is a SOFT target. Completion is a HARD requirement.
 
 ### Depth Requirement — the "so what" mechanic rule
 Every tweet must contain at least ONE concrete mechanic — a single sentence that explains HOW or WHY the thing works, not just WHAT it is or WHAT to call it. The reader should finish the tweet knowing one specific thing they didn't know before. If the tweet only restates the headline in punchier words, rewrite it.
 
 ### Self-Check Before Outputting
+□ Does line 1 stop a fast scroller?
 □ Can I point to one sentence that explains the mechanism?
 □ Would someone who already saw the headline learn anything new?
-□ Is my closing claim backed by at least one supporting fact?
-□ Does line 1 stop a fast scroller?
 □ Is there at least one concrete number or specific detail?
+□ Is my closing claim backed by at least one supporting fact?
 □ Does it end with an implication, not a feature description?
 □ Is there a clear opinion or stance?
-□ Are there any corporate/filler phrases?
-□ Is it under the character limit (220 for short, 260 for thread)?
+□ Are there any corporate or filler phrases?
+□ Is the final line a grammatically complete sentence with a subject and a verb?
+□ Does the tweet end with "..." or any incomplete phrase? If yes, REWRITE the ending.
+□ If I had to cut a line to save characters, did I cut a middle line and NOT the last one?
+□ Is there any source attribution or newsletter mention? If yes, REMOVE it.
 
+### Output Format
 Return a JSON object:
 {
-  "text": "the full tweet text here (via @Source)",
+  "text": "the full tweet text here",
   "char_count": 142,
   "is_thread": false,
   "thread_tweets": null
@@ -86,10 +96,10 @@ def generate_tweet(item: dict, dry_run: bool) -> dict | None:
     """Generate a tweet draft for one content item."""
     if dry_run:
         sample_texts = [
-            "GPT-5 just dropped and it's scoring 95% on MMLU. GPT-4o went from frontier to commodity in one announcement. The pace is getting hard to track. #OpenAI #AI",
+            "GPT-5 just dropped and it's scoring 95% on MMLU. GPT-4o went from frontier to commodity in one announcement. The pace is getting hard to track.",
             "Google's AI Overviews is now live in 100+ countries. Most of the world's searches are now AI-mediated. We skipped the opt-in phase entirely.",
-            "Anthropic raised another $2B at a $60B valuation. Investors are betting a lot on \"safe AI\" being a real differentiator. We'll see.",
-            "Cursor AI's agent mode can now write, run, and debug code on its own. The IDE is becoming an autonomous dev. Junior devs should pay attention. #AI",
+            "Anthropic raised another $2B at a $60B valuation. Investors are betting a lot on \"safe AI\" being a real differentiator.",
+            "Cursor AI's agent mode can now write, run, and debug code on its own. The IDE is becoming an autonomous dev. Junior devs should pay attention.",
             "OpenAI's Sora rolling out to all ChatGPT Plus users. AI video gen just became a commodity feature, not a lab experiment.",
         ]
         idx = hash(item.get("title", "")) % len(sample_texts)
@@ -107,15 +117,17 @@ def generate_tweet(item: dict, dry_run: bool) -> dict | None:
         }
 
     import os
-    from google import genai
-    from google.genai import types
+    from openai import OpenAI
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        console.print("[bold red]Error:[/bold red] GEMINI_API_KEY not set in .env")
+        console.print("[bold red]Error:[/bold red] OPENROUTER_API_KEY not set in .env")
         sys.exit(1)
 
-    client = genai.Client(api_key=api_key)
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
 
     source_handle = "@TechBrew" if "brew" in item.get('source_newsletter', '').lower() else "@FutureTools"
 
@@ -125,32 +137,47 @@ def generate_tweet(item: dict, dry_run: bool) -> dict | None:
         f"Summary: {item.get('summary')}\n"
         f"Key insight: {item.get('key_insight')}\n"
         f"Significance: {item.get('significance', 'medium')}\n"
-        f"MANDATORY SOURCE CREDIT: Must end with (via {source_handle})\n"
     )
     if item.get("url"):
         prompt += f"Source URL: {item['url']}\n"
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{TWEET_SYSTEM_PROMPT}\n\n---\n\n{prompt}",
-            config=types.GenerateContentConfig(
-                temperature=0.75,
-                response_mime_type="application/json"
-            )
+        response = client.chat.completions.create(
+            model="stepfun/step-3.5-flash:free",
+            messages=[
+                {"role": "system", "content": TWEET_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.75,
+            response_format={"type": "json_object"},
         )
 
-        raw = response.text.strip()
+        raw = response.choices[0].message.content.strip()
         parsed = json.loads(raw)
 
-        # Enforce char count correctness according to new rules
+        # Safety net: X allows 280 chars max. Trim only if necessary.
         text = parsed.get("text", "")
-        # Short tweet limit: 220, Thread tweet limit: 260
-        current_limit = 260 if parsed.get("is_thread") else 220
-        
+        current_limit = 280
+
         if len(text) > current_limit:
-            console.print(f"  [yellow]⚠ Tweet too long ({len(text)} chars), truncating to {current_limit}...[/yellow]")
-            text = text[:current_limit - 3] + "..."
+            console.print(f"  [yellow]⚠ Tweet too long ({len(text)} chars), cutting at last sentence...[/yellow]")
+            # Try to cut at the last complete sentence boundary within the limit.
+            # Look for '.', '!', '?' before the hard limit.
+            truncated = text[:current_limit]
+            last_sentence_end = max(
+                truncated.rfind(". "),
+                truncated.rfind("! "),
+                truncated.rfind("? "),
+                truncated.rfind(".\n"),
+                truncated.rfind("!\n"),
+                truncated.rfind("?\n"),
+            )
+            if last_sentence_end > current_limit // 2:
+                # Cut at the end of that sentence (include the punctuation)
+                text = text[:last_sentence_end + 1].strip()
+            else:
+                # No clean sentence boundary found — hard cut as last resort
+                text = truncated.rstrip() + "…"
             parsed["text"] = text
 
         return {

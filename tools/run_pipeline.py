@@ -77,6 +77,7 @@ def main():
     parser = argparse.ArgumentParser(description="Tweetify Pipeline Orchestrator")
     parser.add_argument("--force", action="store_true", help="Bypass catch-up logic and run now")
     parser.add_argument("--scheduled", action="store_true", help="Indicate this is a scheduled run (bypasses catch-up check)")
+    parser.add_argument("--dry-run", action="store_true", help="Run the entire pipeline in dry-run mode (using sample data, no API calls)")
     args = parser.parse_args()
 
     state = get_state()
@@ -91,7 +92,7 @@ def main():
         if hours_since >= 14:
             is_catchup_run = True
 
-    should_run = args.force or args.scheduled or not last_run_str or is_catchup_run
+    should_run = args.force or args.scheduled or args.dry_run or not last_run_str or is_catchup_run
 
     if not should_run:
         logging.info("Pipeline run not required at this time (not scheduled and < 14h since last run).")
@@ -100,10 +101,12 @@ def main():
     if is_catchup_run and not args.scheduled:
         logging.info("Catch-up triggered: > 14 hours since last run.")
 
-    logging.info(f"--- Starting Tweetify Pipeline ({'Scheduled' if args.scheduled else 'Manual/Catch-up'}) ---")
+    logging.info(f"--- Starting Tweetify Pipeline ({'DRY RUN' if args.dry_run else 'Scheduled' if args.scheduled else 'Manual/Catch-up'}) ---")
+
+    common_args = ["--dry-run"] if args.dry_run else []
 
     # Step 1: Fetch
-    code, stdout, stderr = run_command([sys.executable, "tools/fetch_newsletter.py"])
+    code, stdout, stderr = run_command([sys.executable, "tools/fetch_newsletter.py"] + common_args)
     if code != 0:
         logging.error("Fetch failed. Aborting pipeline.")
         return
@@ -115,7 +118,7 @@ def main():
         return
 
     # Step 2: Extract
-    code, stdout, stderr = run_command([sys.executable, "tools/extract_ai_content.py"])
+    code, stdout, stderr = run_command([sys.executable, "tools/extract_ai_content.py"] + common_args)
     if code != 0:
         logging.error("Extraction failed. Aborting pipeline.")
         return
@@ -125,14 +128,15 @@ def main():
         return
 
     # Step 3: Generate
-    code, stdout, stderr = run_command([sys.executable, "tools/generate_tweets.py", "--count", "5"])
+    code, stdout, stderr = run_command([sys.executable, "tools/generate_tweets.py", "--count", "5"] + common_args)
     if code != 0:
         logging.error("Generation failed. Aborting pipeline.")
         return
 
     # Success!
-    state["last_successful_run"] = now.isoformat()
-    save_state(state)
+    if not args.dry_run:
+        state["last_successful_run"] = now.isoformat()
+        save_state(state)
     logging.info("--- Pipeline Completed Successfully ---")
 
 if __name__ == "__main__":

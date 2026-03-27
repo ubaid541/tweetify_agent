@@ -46,7 +46,8 @@ Do NOT include:
 - Marketing or politics content
 - Generic tech not related to AI
 
-Return a JSON array of objects. Each object must have exactly these fields:
+Return a JSON object with a single key "items" containing a list of story objects. 
+Each story object must have exactly these fields:
 {
   "title": "Short clear title for the story (max 10 words)",
   "summary": "2-3 sentence factual summary of the story",
@@ -56,7 +57,7 @@ Return a JSON array of objects. Each object must have exactly these fields:
   "significance": "high | medium | low"
 }
 
-Return ONLY the raw JSON array. No markdown, no explanation."""
+Return ONLY the raw JSON object. No markdown, no explanation."""
 
 
 def extract_with_llm(newsletter_content: str, source: str, dry_run: bool) -> list[dict]:
@@ -82,33 +83,36 @@ def extract_with_llm(newsletter_content: str, source: str, dry_run: bool) -> lis
         ]
 
     import os
-    from google import genai
-    from google.genai import types
+    from openai import OpenAI
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        console.print("[bold red]Error:[/bold red] GEMINI_API_KEY not set in .env")
+        console.print("[bold red]Error:[/bold red] OPENROUTER_API_KEY not set in .env")
         sys.exit(1)
 
-    client = genai.Client(api_key=api_key)
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
 
     truncated = newsletter_content[:15000]  # Reduced to 15k to guarantee fast generation and avoid silent timeouts
-    
-    console.print(f"  [dim]↳ Sending {len(truncated)} chars to Gemini API...[/dim]")
+
+    console.print(f"  [dim]↳ Sending {len(truncated)} chars to OpenRouter (stepfun/step-3.5-flash:free)...[/dim]")
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{EXTRACTION_SYSTEM_PROMPT}\n\nNewsletter source: {source}\n\n---\n\n{truncated}",
-            config=types.GenerateContentConfig(
-                temperature=0.2,
-                response_mime_type="application/json"
-            )
+        response = client.chat.completions.create(
+            model="stepfun/step-3.5-flash:free",
+            messages=[
+                {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Newsletter source: {source}\n\n---\n\n{truncated}"},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
         )
-        raw = response.text.strip()
-        console.print("  [dim]↳ Response received from Gemini[/dim]")
+        raw = response.choices[0].message.content.strip()
+        console.print("  [dim]↳ Response received from OpenRouter[/dim]")
     except Exception as e:
-        console.print(f"  [bold red]Error from Gemini API:[/bold red]\n{str(e)}")
+        console.print(f"  [bold red]Error from OpenRouter API:[/bold red]\n{str(e)}")
         return []
 
     # GPT returns {"items": [...]} or just [...] — handle both
@@ -120,10 +124,16 @@ def extract_with_llm(newsletter_content: str, source: str, dry_run: bool) -> lis
 
     if isinstance(parsed, list):
         return parsed
-    # Try to find the array in a wrapper object
+    
+    # Handle case where model returns a single story object instead of a list
+    if "title" in parsed and "summary" in parsed:
+        return [parsed]
+        
+    # Try to find the array in a wrapper object (e.g. {"items": [...]})
     for v in parsed.values():
         if isinstance(v, list):
             return v
+            
     return []
 
 
