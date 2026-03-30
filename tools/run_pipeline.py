@@ -128,7 +128,7 @@ def main():
         return
 
     # Step 3: Generate
-    code, stdout, stderr = run_command([sys.executable, "tools/generate_tweets.py", "--count", "5"] + common_args)
+    code, stdout, stderr = run_command([sys.executable, "tools/generate_tweets.py", "--count", "6"] + common_args)
     if code != 0:
         logging.error("Generation failed. Aborting pipeline.")
         return

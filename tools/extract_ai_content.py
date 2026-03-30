@@ -182,6 +182,13 @@ def main():
 
         items = extract_with_llm(content, source, args.dry_run)
         if items:
+            # Sort by significance and keep only the top 3 items from THIS newsletter
+            items.sort(
+                key=lambda x: {"high": 3, "medium": 2, "low": 1}.get(str(x.get("significance")).lower(), 0),
+                reverse=True
+            )
+            items = items[:3]
+
             # Add source and date to each item before extending
             for item in items:
                 item["source_newsletter"] = source
@@ -190,12 +197,12 @@ def main():
         else:
             console.print("  [yellow]No AI/tech items found in this newsletter.[/yellow]")
 
-    # Sort globally by significance to get the absolute best stories
+    # Final global sort by significance to maintain order (no global slice)
     all_items = sorted(
         all_items,
         key=lambda x: {"high": 3, "medium": 2, "low": 1}.get(str(x.get("significance")).lower(), 0),
         reverse=True
-    )[:3]  # Global cap at exactly 3 items
+    )
 
     if not all_items:
         console.print("\n[bold yellow]No AI content extracted. Nothing to save.[/bold yellow]")
